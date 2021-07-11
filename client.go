@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -31,8 +32,13 @@ func (c *Client) loop() {
 		log.Printf("%s trying to receive", c.name)
 		select {
 		case from := <-c.channel:
-			log.Printf("%s received from server: %s", c.name, from)
-			log.Println("")
+			rmsg := fmt.Sprintf("%s received from server: %s ", c.name, from)
+			log.Printf(rmsg)
+			if _, err := c.connection.Write([]byte(rmsg)); err != nil {
+				c.quit()
+				log.Fatalf("Client %s COULD NOT WRITE MESSAGE", c.name)
+			}
+			c.connection.Write([]byte("\r\n"))
 		default:
 			log.Printf("%s trying to read input", c.name)
 			if msg, err := bufio.NewReader(c.connection).ReadString('\n'); err == nil {
@@ -90,4 +96,5 @@ func (c *Client) sendMessage(msg string) {
 
 func (c *Client) quit() {
 	c.serverObj.quit(*c)
+	c.connection.Close()
 }

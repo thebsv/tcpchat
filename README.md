@@ -1,4 +1,4 @@
-## Simple TCP Server
+## Simple chat Server
 
 ### Requirements for the server
 

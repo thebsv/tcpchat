@@ -17,9 +17,9 @@ func newServer() *ChatServer {
 }
 
 func (s *ChatServer) run() {
-	// Works using a push mechanism to move all messages in each
-	// client's channel to the client object's channel. This is done
-	// in response to RPC calls from the client to perform a particular action.
+	// The client has the server object and uses
+	// RPC to operate the server. Cleanup is done here for clients
+	// That have exited without closing their connection.
 
 	for {
 	}
