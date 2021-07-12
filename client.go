@@ -6,21 +6,84 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 )
+
+type Queue struct {
+	queue []string
+	lock  sync.RWMutex
+}
+
+func (q *Queue) push(message string) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+	q.queue = append(q.queue, message)
+}
+
+func (q *Queue) pop() (string, error) {
+	if len(q.queue) > 0 {
+		q.lock.Lock()
+		defer q.lock.Unlock()
+		ret := q.queue[0]
+		q.queue = q.queue[1:]
+		return ret, nil
+	}
+	return "-1", fmt.Errorf("Queue is empty")
+}
+
+func (q *Queue) top() (string, error) {
+	if len(q.queue) > 0 {
+		return q.queue[0], nil
+	}
+	return "-1", fmt.Errorf("Queue is empty")
+}
+
+func (q *Queue) empty() bool {
+	return len(q.queue) == 0
+}
+
+func (q *Queue) length() int {
+	return len(q.queue)
+}
 
 type Client struct {
 	connection net.Conn
 	name       string
-	channel    chan string
+	channel    *Queue
 	serverObj  *ChatServer
 }
 
 func newClient(conn net.Conn) *Client {
+	qu := &Queue{queue: make([]string, 0)}
 	return &Client{
 		connection: conn,
 		name:       "new",
-		channel:    make(chan string, 10),
+		channel:    qu,
 		serverObj:  nil,
+	}
+}
+
+func writeToConnectionOrDestroy(c *Client, msg string) bool {
+	log.Printf(msg)
+	if _, err := bufio.NewWriter(c.connection).WriteString(msg); err != nil {
+		log.Fatalf("Client %s COULD NOT WRITE MESSAGE", c.name)
+		c.quit()
+		return false
+	}
+	return true
+}
+
+func flushQueue(c *Client) {
+	if c.channel.empty() == false {
+		rc := true
+		for c.channel.length() > 0 {
+			mesg, _ := c.channel.pop()
+			rc := rc && writeToConnectionOrDestroy(c, mesg)
+			if rc == false {
+				c.quit()
+				break
+			}
+		}
 	}
 }
 
@@ -29,72 +92,65 @@ func (c *Client) loop() {
 	// depending on the argument passed to it from the command line.
 
 	for {
+
 		log.Printf("%s trying to receive", c.name)
-		select {
-		case from := <-c.channel:
-			rmsg := fmt.Sprintf("%s received from server: %s ", c.name, from)
-			log.Printf(rmsg)
-			if _, err := c.connection.Write([]byte(rmsg)); err != nil {
-				c.quit()
-				log.Fatalf("Client %s COULD NOT WRITE MESSAGE", c.name)
-			}
-			c.connection.Write([]byte("\r\n"))
-		default:
-			log.Printf("%s trying to read input", c.name)
-			if msg, err := bufio.NewReader(c.connection).ReadString('\n'); err == nil {
+		flushQueue(c)
+		log.Println("Finished receiving, reading from stdin")
+		msg, err := bufio.NewReader(c.connection).ReadString('\n')
+		if err != nil {
+			log.Printf("nothing to read from stdin")
+			continue
+		} else {
+			log.Printf("%s INPUT %s", c.name, msg)
+			cmd := strings.Split(strings.Trim(msg, "\n"), " ")
 
-				log.Printf("%s INPUT %s", c.name, msg)
-
-				cmd := strings.Split(strings.Trim(msg, "\r\n"), " ")
-				// switch using message and send the command to the server.
-				switch cmd[0] {
-				case "LIST":
-					log.Printf("%s CASE LIST ", c.name)
-					c.list()
-				case "NAME":
-					log.Printf("%s CASE NAME ", c.name)
-					if len(cmd) > 1 {
-						c.changeName(cmd[1])
-					}
-				case "QUIT":
-					log.Printf("%s CASE QUIT ", c.name)
-					c.quit()
-					err := c.connection.Close()
-					if err != nil {
-						log.Fatalf("%s CASE QUIT connection close error ", c.name)
-					}
-					return
-				default:
-					log.Printf("%s CASE DEFAULT ", c.name)
-					c.sendMessage(cmd[0])
+			switch cmd[0] {
+			case "LIST":
+				log.Printf("%s CASE LIST ", c.name)
+				c.list()
+			case "NAME":
+				log.Printf("%s CASE NAME ", c.name)
+				if len(cmd) > 1 {
+					c.changeName(cmd[1])
 				}
-
-				log.Printf("%s DONE", c.name)
+			case "QUIT":
+				log.Printf("%s CASE QUIT ", c.name)
+				c.quit()
+				err := c.connection.Close()
+				if err != nil {
+					log.Fatalf("%s CASE QUIT connection close error ", c.name)
+				}
+				return
+			default:
+				log.Printf("%s CASE DEFAULT MESSAGE TO BE BR %s ", c.name, cmd[0])
+				c.sendMessage(cmd[0])
 			}
+			log.Printf("%s DONE", c.name)
 		}
 	}
 }
 
 func (c *Client) join(serv *ChatServer) {
-	serv.join(*c)
+	serv.join(c)
 	c.serverObj = serv
 	go c.loop()
 }
 
 func (c *Client) changeName(given string) {
-	c.serverObj.changeName(*c, given)
 	c.name = given
+	c.serverObj.changeName(c, given)
 }
 
 func (c *Client) list() {
-	c.serverObj.list(*c)
+	c.serverObj.list(c)
 }
 
 func (c *Client) sendMessage(msg string) {
-	c.serverObj.broadcast(*c, msg)
+	c.serverObj.broadcast(c, msg)
+	flushQueue(c)
 }
 
 func (c *Client) quit() {
-	c.serverObj.quit(*c)
+	c.serverObj.quit(c)
 	c.connection.Close()
 }

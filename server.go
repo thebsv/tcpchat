@@ -7,12 +7,12 @@ import (
 )
 
 type ChatServer struct {
-	serveClient map[Client]bool
+	serveClient map[*Client]bool
 }
 
 func newServer() *ChatServer {
 	return &ChatServer{
-		serveClient: make(map[Client]bool),
+		serveClient: make(map[*Client]bool),
 	}
 }
 
@@ -26,35 +26,34 @@ func (s *ChatServer) run() {
 
 }
 
-func (s *ChatServer) changeName(client Client, given string) {
-	if s.serveClient[client] == true {
-		client.name = given
+func (s *ChatServer) changeName(client *Client, given string) {
+	if _, exist := s.serveClient[client]; exist {
 		delete(s.serveClient, client)
 		s.serveClient[client] = true
 	}
 }
 
-func (s *ChatServer) join(c Client) {
-	log.Printf("New client %s joined the server!", c.connection.RemoteAddr().String())
-	s.serveClient[c] = true
+func (s *ChatServer) join(client *Client) {
+	log.Printf("New client %s joined the server!", client.connection.RemoteAddr().String())
+	s.serveClient[client] = true
 }
 
-func (s *ChatServer) broadcast(client Client, msg string) {
+func (s *ChatServer) broadcast(client *Client, msg string) {
 	for c := range s.serveClient {
 		message := fmt.Sprintf("SERVER %s: %s", c.name, msg)
-		c.channel <- message
+		c.channel.push(message)
 	}
 }
 
-func (s *ChatServer) list(c Client) {
+func (s *ChatServer) list(client *Client) {
 	var clientList []string
 	for c := range s.serveClient {
 		clientList = append(clientList, c.name)
 	}
-	c.channel <- strings.Join(clientList, " ")
+	client.channel.push(strings.Join(clientList, " "))
 }
 
-func (s *ChatServer) quit(client Client) {
+func (s *ChatServer) quit(client *Client) {
 	if _, ok := s.serveClient[client]; ok {
 		delete(s.serveClient, client)
 	}
