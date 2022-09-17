@@ -64,22 +64,23 @@ func newClient(conn net.Conn) *Client {
 }
 
 func writeToConnectionOrDestroy(c *Client, msg string) bool {
-	log.Printf(msg)
-	if _, err := bufio.NewWriter(c.connection).WriteString(msg); err != nil {
-		log.Fatalf("Client %s COULD NOT WRITE MESSAGE", c.name)
-		c.quit()
+	msg = msg + "\r\n"
+	log.Println(msg)
+	_, err := net.Conn.Write(c.connection, []byte(msg))
+	if err != nil {
+		log.Printf("Could not write to connection %s ", err)
 		return false
 	}
 	return true
 }
 
 func flushQueue(c *Client) {
-	if c.channel.empty() == false {
+	if !c.channel.empty() {
 		rc := true
 		for c.channel.length() > 0 {
 			mesg, _ := c.channel.pop()
 			rc := rc && writeToConnectionOrDestroy(c, mesg)
-			if rc == false {
+			if !rc {
 				c.quit()
 				break
 			}

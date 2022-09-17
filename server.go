@@ -40,7 +40,7 @@ func (s *ChatServer) join(client *Client) {
 
 func (s *ChatServer) broadcast(client *Client, msg string) {
 	for c := range s.serveClient {
-		message := fmt.Sprintf("SERVER %s: %s", c.name, msg)
+		message := fmt.Sprintf("SERVER %s: %s", client.name, msg)
 		c.channel.push(message)
 	}
 }
